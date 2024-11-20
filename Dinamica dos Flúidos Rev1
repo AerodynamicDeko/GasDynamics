@@ -1,0 +1,132 @@
+import math
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.optimize import fsolve
+import altair as alt
+import numpy as np
+
+def collect_data_from_user() -> dict: #essa seta serve para dizer qual o tipo de retorno da função
+    """
+    Function that collect data from users to perform calculation
+    """
+    print('Valores de saída de uma tubeira padrão')
+    return {
+        "gama": float(input("Insira o valor de Gama: ")),
+        "R": float(input("Insira o valor de R: ")),
+        "p": float(input("Insira o valor de p (Pa) antes da tubeira: ")),
+        "T": float(input("Insira a temperatura (K) inicial do escoamento: ")),
+        "rt": float(input("Insira a densidade antes da onda de choque (kg/m³): ")),
+        "raio_garganta": float(input("Insira o raio da garganta (m): ")),
+        "raio_saida": float(input("Insira o raio da saída (m): "))
+    }
+
+# Função para calcular o Mach em função da relação de área A/A*
+def mach_from_area_ratio(area_ratio, gama) -> float:
+    """
+    Essa função, mach_from_area_ratio, calcula o número de Mach (M) correspondente 
+    a uma relação de área dada (area_ratio = A/A*) e um valor específico de gama. 
+    Ela usa a relação de área isentrópica para o escoamento compressível, e o método fsolve para 
+    encontrar numericamente o valor de M que faz com que a equação seja satisfeita.
+    Objetivo: Encontrar o número de Mach para uma dada relação de área e gama.
+    Estratégia: Usar fsolve para resolver a equação transformada para f(M) = 0.
+    Resultado: Retornar o número de Mach que corresponde à relação de área fornecida.
+    """
+    def equation(M):
+        return (1 / M) * ((2 / (gama + 1)) * (1 + (gama - 1) / 2 * M ** 2)) ** ((gama + 1) / (2 * (gama - 1))) - area_ratio
+    M_initial_guess = 1.3
+    M_solution, = fsolve(equation, M_initial_guess) # O fsolve usa o método de Newton-Raphson para encontrar o valor de M a partir de um 'chute inicial'
+    return M_solution
+
+
+if __name__ == '__main__':
+    data_from_users = collect_data_from_user()
+    gama = data_from_users['gama']
+    R = data_from_users['R']
+    
+    # Calcular áreas da garganta e saída
+
+    # Área da garganta
+    A_star = math.pi * data_from_users["raio_garganta"] ** 2  
+    # Área da saída
+    A_saida = math.pi * data_from_users["raio_saida"] ** 2    
+
+    # Máxima relação A/A* baseada nos raios
+    max_area_ratio = A_saida / A_star  
+    
+    # Gerar uma série de valores de A/A* para a seção divergente, do A0 até o valor máximo
+    # A função linspace cria 50 pontos entre as áreas de entrada e saída da tubeira
+    area_ratios = list(np.linspace(1.0, max_area_ratio, num=50)) 
+
+    # Condições totais
+    Tt = data_from_users["T"] * (1 + ((gama - 1) / 2))
+    pt = data_from_users["p"] * (1 + (gama - 1) / 2) ** (gama / (gama - 1))
+
+    # Calculo da velocidade do som e Mach na entrada
+    a = math.sqrt(gama * R * data_from_users["T"])
+    v = float(input('Insira a velocidade inicial "entrada na tubeira": '))
+    M1 = v / a
+
+    # Relações isentrópicas e propriedades após onda de choque
+
+    P1 = data_from_users['p']
+    P2 = P1 * ((gama + 1) / (2 * M1 ** 2)) / (1 + (gama - 1) / (2 * M1 ** 2))
+    T2 = data_from_users['T'] * (1 + (gama - 1) / (2 * M1 ** 2)) / (1 + (gama - 1) / 2)
+    ro2 = data_from_users['rt'] * (P2 / P1) ** (1 / gama)
+    v2 = math.sqrt(2 * R * (Tt - T2))
+
+    print(f'Pressão após a onda de choque: {P2:.2f} Pa')
+    print(f'Temperatura após a onda de choque: {T2:.2f} K')
+    print(f'Densidade após a onda de choque: {ro2:.2f} kg/m³')
+    print(f'Velocidade na saída: {v2:.2f} m/s')
+    
+    # Seção divergente com cálculo de Mach em função de A/A*
+    mach_numbers = []
+    pressures = []
+    temperatures = []
+    densities = []
+    velocities = []
+
+    for area_ratio in area_ratios:
+        M = mach_from_area_ratio(area_ratio, gama)
+        T = Tt / (1 + (gama - 1) / 2 * M ** 2)
+        p = pt / (1 + (gama - 1) / 2 * M ** 2) ** (gama / (gama - 1))
+        rho = p / (R * T)
+        v = M * math.sqrt(gama * R * T)
+
+    # Aqui vou usar a função append para adicionar os valores às listas que eu abri na linha 83
+
+        mach_numbers.append(M)
+        pressures.append(p)
+        temperatures.append(T)
+        densities.append(rho)
+        velocities.append(v)
+    
+    # Cria DataFrame para armazenar resultados na seção divergente
+    df_divergente = pd.DataFrame({
+        "Área Relativa (A/A*)": area_ratios,
+        "Mach": mach_numbers,
+        "Pressão (Pa)": pressures,
+        "Temperatura (K)": temperatures,
+        "Densidade (kg/m³)": densities,
+        "Velocidade (m/s)": velocities
+    })
+
+    print("\nParâmetros na seção divergente:")
+    print(df_divergente)
+
+    # Plotando os resultados na seção divergente com ajuste automático de escala
+    fig, axs = plt.subplots(3, 2, figsize=(10, 12))
+    fig.suptitle("Parâmetros do Escoamento na Seção Divergente com Relação de Área")
+
+    # Gráficos individuais para cada parâmetro com ajuste de limites
+    parameters = ["Mach", "Pressão (Pa)", "Temperatura (K)", "Densidade (kg/m³)", "Velocidade (m/s)"]
+    for i, param in enumerate(parameters):
+        ax = axs[i // 2, i % 2]
+        ax.plot(df_divergente["Área Relativa (A/A*)"], df_divergente[param], label=param)
+        ax.set_xlabel("Área Relativa (A/A*)")
+        ax.set_ylabel(param)
+        ax.set_ylim(df_divergente[param].min() * 0.95, df_divergente[param].max() * 1.05)  # Ajuste para dar espaço nas extremidades
+        ax.legend()
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()

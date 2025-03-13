@@ -1,0 +1,29 @@
+Escoamento Isentrópico:
+gama: 1.4 (ar)
+R= 287
+P0= 101325
+T= 300
+V0= 300
+rt(densidade)= 1.225 (ar)
+Raio_da_Garganta= 0.05
+Raio_da_Saída= 0.1
+
+Escoamento com onda de Choque:
+gama: 1.6 (He)
+R= 287
+P0= 101325
+T= 300
+V0= 300
+rt(densidade)= 1.225 (ar)
+Raio_da_Garganta= 0.05
+Raio_da_Saída= 0.3
+
+Escoamento com leque de expansão:
+gama: 
+R= 
+P0= 
+T= 
+V0= 
+rt(densidade)= 
+Raio_da_Garganta= 
+Raio_da_Saída= 

@@ -1,0 +1,178 @@
+import math
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.optimize import fsolve
+import numpy as np
+
+def collect_data_from_user() -> dict:
+    """
+    Function that collect data from users to perform calculation
+    """
+    print('Valores de saída de uma tubeira padrão')
+    return {
+        "gama": float(input("Insira o valor de Gama: ")),
+        "R": float(input("Insira o valor de R: ")),
+        "p": float(input("Insira o valor de p (Pa) antes da tubeira: ")),
+        "T": float(input("Insira a temperatura (K) inicial do escoamento: ")),
+        "rt": float(input("Insira a densidade antes da onda de choque (kg/m³): ")),
+        "raio_garganta": float(input("Insira o raio da garganta (m): ")),
+        "raio_saida": float(input("Insira o raio da saída (m): "))
+    }
+
+def mach_from_area_ratio(area_ratio, gama) -> float:
+    """
+    Calcula o número de Mach (M) para uma relação de área dada e gama.
+    """
+    def equation(M):
+        return (1 / M) * ((2 / (gama + 1)) * (1 + (gama - 1) / 2 * M ** 2)) ** ((gama + 1) / (2 * (gama - 1))) - area_ratio
+    M_initial_guess = 1.3
+    M_solution, = fsolve(equation, M_initial_guess)
+    return M_solution
+
+if __name__ == '__main__':
+    data_from_users = collect_data_from_user()
+    gama = data_from_users['gama']
+    R = data_from_users['R']
+    
+    # Calcular áreas da garganta e saída
+    A_star = math.pi * data_from_users["raio_garganta"] ** 2  
+    A_saida = math.pi * data_from_users["raio_saida"] ** 2    
+    max_area_ratio = A_saida / A_star  
+
+    area_ratios = list(np.linspace(1.0, max_area_ratio, num=50))
+
+    # Condições totais
+    Tt = data_from_users["T"] * (1 + ((gama - 1) / 2))
+    pt = data_from_users["p"] * (1 + (gama - 1) / 2) ** (gama / (gama - 1))
+
+    # Calculo da velocidade do som e Mach na entrada
+    a = math.sqrt(gama * R * data_from_users["T"])
+    v = float(input('Insira a velocidade inicial "entrada na tubeira": '))
+    M1 = v / a
+
+    # Relações isentrópicas e propriedades após onda de choque
+    P1 = data_from_users['p']
+    P2 = P1 * ((gama + 1) / (2 * M1 ** 2)) / (1 + (gama - 1) / (2 * M1 ** 2))
+    T2 = data_from_users['T'] * (1 + (gama - 1) / (2 * M1 ** 2)) / (1 + (gama - 1) / 2)
+    ro2 = data_from_users['rt'] * (P2 / P1) ** (1 / gama)
+    v2 = math.sqrt(2 * R * (Tt - T2))
+
+    print(f'Pressão após a onda de choque: {P2:.2f} Pa')
+    print(f'Temperatura após a onda de choque: {T2:.2f} K')
+    print(f'Densidade após a onda de choque: {ro2:.2f} kg/m³')
+    print(f'Velocidade na saída: {v2:.2f} m/s')
+    
+    # Cálculo de empuxo
+    M_garganta = 1  # Mach na garganta sempre é 1 em tubeiras ideais
+    T_garganta = Tt / (1 + (gama - 1) / 2 * M_garganta ** 2)
+    p_garganta = pt / (1 + (gama - 1) / 2 * M_garganta ** 2) ** (gama / (gama - 1))
+    rho_garganta = p_garganta / (R * T_garganta)
+    a_garganta = math.sqrt(gama * R * T_garganta)
+    v_garganta = M_garganta * a_garganta
+
+    # Massa fluxo (kg/s)
+    mass_flow_rate = rho_garganta * A_star * v_garganta
+
+    # Pressão ambiente
+    p_amb = float(input("Insira a pressão ambiente (Pa): "))
+
+    # Empuxo (N)
+    F = mass_flow_rate * v2 + (P2 - p_amb) * A_saida
+
+    print("\nCálculos do Empuxo:")
+    print(f"Taxa de fluxo mássico (kg/s): {mass_flow_rate:.4f}")
+    print(f"Empuxo gerado pela tubeira (N): {F:.2f}")
+
+    # Cálculos na seção divergente
+    mach_numbers = []
+    pressures = []
+    temperatures = []
+    densities = []
+    velocities = []
+
+    for area_ratio in area_ratios:
+        M = mach_from_area_ratio(area_ratio, gama)
+        T = Tt / (1 + (gama - 1) / 2 * M ** 2)
+        p = pt / (1 + (gama - 1) / 2 * M ** 2) ** (gama / (gama - 1))
+        rho = p / (R * T)
+        v = M * math.sqrt(gama * R * T)
+
+        mach_numbers.append(M)
+        pressures.append(p)
+        temperatures.append(T)
+        densities.append(rho)
+        velocities.append(v)
+    
+    # Criar DataFrame com os resultados
+    df_divergente = pd.DataFrame({
+        "Área Relativa (A/A*)": area_ratios,
+        "Mach": mach_numbers,
+        "Pressão (Pa)": pressures,
+        "Temperatura (K)": temperatures,
+        "Densidade (kg/m³)": densities,
+        "Velocidade (m/s)": velocities
+    })
+
+    print("\nParâmetros na seção divergente:")
+    print(df_divergente)
+
+# Ajustar o layout dos gráficos para que fiquem menores e bem distribuídos
+fig, axs = plt.subplots(4, 2, figsize=(12, 14))  # Reduzir tamanho da figura
+
+# Títulos gerais
+fig.suptitle("Resumo dos Parâmetros do Escoamento e Resultados da Tubeira", fontsize=14, y=1.00)
+
+# Gráfico 1: Mach
+axs[0, 0].plot(df_divergente["Área Relativa (A/A*)"], df_divergente["Mach"], label="Mach", color="blue")
+axs[0, 0].set_title(".", fontsize=8)
+axs[0, 0].set_xlabel("Área Relativa (A/A*)", fontsize=6)
+axs[0, 0].set_ylabel("Mach", fontsize=10)
+axs[0, 0].grid()
+
+# Gráfico 2: Pressão
+axs[0, 1].plot(df_divergente["Área Relativa (A/A*)"], df_divergente["Pressão (Pa)"], label="Pressão", color="green")
+axs[0, 1].set_title(".", fontsize=8)
+axs[0, 1].set_xlabel("Área Relativa (A/A*)", fontsize=6)
+axs[0, 1].set_ylabel("Pressão (Pa)", fontsize=10)
+axs[0, 1].grid()
+
+# Gráfico 3: Temperatura
+axs[1, 0].plot(df_divergente["Área Relativa (A/A*)"], df_divergente["Temperatura (K)"], label="Temperatura", color="red")
+axs[1, 0].set_title(".", fontsize=8)
+axs[1, 0].set_xlabel("Área Relativa (A/A*)", fontsize=6)
+axs[1, 0].set_ylabel("Temperatura (K)", fontsize=10)
+axs[1, 0].grid()
+
+# Gráfico 4: Densidade
+axs[1, 1].plot(df_divergente["Área Relativa (A/A*)"], df_divergente["Densidade (kg/m³)"], label="Densidade", color="purple")
+axs[1, 1].set_title(".", fontsize=8)
+axs[1, 1].set_xlabel("Área Relativa (A/A*)", fontsize=6)
+axs[1, 1].set_ylabel("Densidade (kg/m³)", fontsize=10)
+axs[1, 1].grid()
+
+# Gráfico 5: Velocidade
+axs[2, 0].plot(df_divergente["Área Relativa (A/A*)"], df_divergente["Velocidade (m/s)"], label="Velocidade", color="orange")
+axs[2, 0].set_title(".", fontsize=8)
+axs[2, 0].set_xlabel("Área Relativa (A/A*)", fontsize=6)
+axs[2, 0].set_ylabel("Velocidade (m/s)", fontsize=10)
+axs[2, 0].grid()
+
+# Gráfico 6: Empuxo
+axs[2, 1].bar(["Empuxo (N)"], [F], color="blue", alpha=0.7)
+axs[2, 1].set_title(".", fontsize=10)
+axs[2, 1].set_ylabel("Empuxo (N)", fontsize=8)
+axs[2, 1].grid(axis='y', linestyle='--', alpha=0.7)
+
+# Gráfico 7: Fluxo Mássico
+axs[3, 0].bar(["Fluxo Mássico (kg/s)"], [mass_flow_rate], color="orange", alpha=0.7)
+axs[3, 0].set_title(".", fontsize=10)
+axs[3, 0].set_ylabel("Fluxo Mássico (kg/s)", fontsize=8)
+axs[3, 0].grid(axis='y', linestyle='--', alpha=0.7)
+
+# Remover subplot vazio
+axs[3, 1].axis("off")
+
+# Ajustar layout para que tudo caiba bem
+plt.subplots_adjust(hspace=0.6, wspace=0.4)  # Espaçamento entre gráficos
+plt.tight_layout(rect=[0, 0, 1, 0.96])  # Ajustar para o título geral
+plt.show()
